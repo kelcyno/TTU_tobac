@@ -1,0 +1,131 @@
+#Parameter setup/info
+
+#FEATURE PARAMETERS
+
+# Dictionary containing keyword options (could also be directly given to the function)
+parameters_features={}
+
+parameters_features['position_threshold']='weighted_diff'
+parameters_features['sigma_threshold']= 1.0 #0.5 is the default
+parameters_features['threshold']= 30 
+#parameters_features['min_num']=0
+#parameters_features['min_distance']=5 #0 #15
+#parameters_features['n_erosion_threshold']=0
+#parameters_features['n_min_threshold']=0
+
+
+#SIGMA_THRESHOLD
+The default for sigma_threshold is 0.5, in practice this produces many more features
+than is realistic in some instances. TTU currently uses 1.0, but if you find you aren't 
+capturing the features you'd like, lower this values.
+
+
+#THRESHOLD
+This is the tracking threshold. There is the option in tobac for multiple thresholds,
+however for tracking on composite reflectivity, TTU uses 10dBz or 30dBz.
+
+#MIN_NUM
+This is the minimum number of features, we set 0
+
+#MIN_DISTANCE
+The minimum allowable distance between features. We have varied this from 0-5, I believe 
+this is in grid elements or model units. This has not had an appreciable difference on
+isolated convection.
+
+#N_EROSION_THRESHOLD
+TTU does not use this parameter currently, the tobac default is used.
+
+#N_MIN_THRESHOLD
+TTU does not use this parameter currently, the tobac default is used.
+
+
+
+#SEGMENTATION PARAMETERS
+
+# Dictionary containing keyword arguments for segmentation step:
+parameters_segmentation={}
+parameters_segmentation['method']='watershed'
+parameters_segmentation['threshold']=30  
+parameters_segmentation['ISO_dilate']=10  
+#parameters_segmentation['features']
+#parameters_segmentation['field']
+#parameters_segmentation['dxy']
+#parameters_segmentation['target']
+#parameters_segmentation['level']
+#parameters_segmentation['max_distance']
+#parameters_segmentation['vertical_coord']
+
+
+#METHOD
+watershed is the default and what TTU uses.
+
+#THRESHOLD
+We set this threshold to match the feature threshold
+
+#ISO_dilate
+This is the dilation parameter for how much the segmentation mask shape is dilated.
+The default is 8, but also configurable. This is in grid boxes. Larger value is a larger dilation.
+
+#MAXIMUM DISTANCE
+Maximum distance from a marker allowed to be classified as
+belonging to that cell. Default is None.
+
+
+#TRACKING PARAMETERS
+
+# Dictionary containing keyword arguments for the linking step:
+parameters_linking={}
+parameters_linking['stubs'] = 3
+parameters_linking['method_linking']='predict'
+parameters_linking['adaptive_stop']=0.2
+parameters_linking['adaptive_step']=0.95
+parameters_linking['extrapolate']=2 
+parameters_linking['order']=2 
+parameters_linking['subnetwork_size']=100 
+parameters_linking['memory']= 2
+#parameters_linking['time_cell_min']=1
+parameters_linking['v_max']=1.0 
+parameters_linking['d_min']= None 
+
+
+#STUBS
+Stubby tracks with frames fewer than this threshold will be removed. TTU varies this
+between 3 and 5.
+
+#METHOD LINKING
+TTU uses predict, I *think* this is default.
+
+#ADATPTIVE STOP/STEP
+TTU USES 0.2 (STOP), and 0.95 (STEP) from the tobac examples. Have not varied this 
+parameter significantly.
+
+#EXTRAPOLATE
+The number of frames to extrapolate the track forward to
+
+#ORDER
+Order of polynomial for extrapolating
+The number of frames which a feature will remain in a track without 
+
+#SUBNETWORK SIZE
+This is related to the area in which related cells in the next frame are examined for 
+linking. TTU has varied this at 50-100. Currently using 100.
+
+#MEMORY
+The number of frames which a feature will be kept in a track (in the track 'memory') when
+a feature may not be found in the next frame. TTU uses 2, but have used anything from 1-5.
+
+#TIME CELL MIN
+Minimum cell duration. The minimum here (I believe is) 1 frame.
+
+#V MAX
+This has a significant impact on how well and how realistic the track is. This is roughly the 
+velocity of the cell you might be tracking. Unsure of units. If you have unreasonable or 
+unrealistic cell tracks (90 degree turns etc) consider increasing or decreasing this variable.
+A value of 1.0 (or lower) is appropriate for Houston storms which are relatively isolated
+and stagnant. SE storms often require a value of 2-2.5, some stagnant days in Houston have
+been tracked well with values of 0.5.
+
+#D min
+This field is the minimum search distance for the next feature in the track. This is used 
+in place of giving the v_max parameter. TTU uses the v_max parameter and uses the default values
+of None here.
