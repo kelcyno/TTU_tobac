@@ -217,7 +217,7 @@ parameters_linking['order']=2 #Order of polynomial for extrapolating
 parameters_linking['subnetwork_size']=100 #50 #100
 parameters_linking['memory']= 2
 #parameters_linking['time_cell_min']=1
-parameters_linking['v_max']=2.0#.5
+parameters_linking['v_max']=1.0#.5
 parameters_linking['d_min']= None #5
 
 
@@ -739,18 +739,8 @@ def plot(t_index,xrdata,max_refl,features,mask,track, ncgrid,dbz,lons,lats,nclon
         else:
             continue
 
-
-# In[61]:
-
-
-type(t_step)
-
-
-# In[ ]:
-
-
 for i in range(len(nc_grid.time)):
-#i = 5
+
     time_index = i
 
     time_step = str(nc_grid['time'][time_index].values)
