@@ -254,15 +254,6 @@ both_ds = compress_all(both_ds)
 both_ds.to_netcdf(os.path.join(savedir,'Track_features_merges.nc'))
 
 
-# In[16]:
-
-
-ds = standardize_track_dataset(Track, refl_mask, data['ProjectionCoordinateSystem'])
-both_ds = xarray.merge([ds, d],compat ='override')
-both_ds = compress_all(both_ds)
-both_ds.to_netcdf(os.path.join(savedir,'Track_features_merges.nc'))
-
-
 # In[24]:
 
 
