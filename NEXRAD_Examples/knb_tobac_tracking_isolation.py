@@ -662,7 +662,7 @@ def plot(t_index,xrdata,max_refl,features,mask,track, ncgrid,dbz,lons,lats,nclon
     t_step = str(ncgrid['time'][t_index].values)
     print(t_step)
     
-    fname = "/Users/kelcy/Downloads/10m_cultural/10m_cultural/ne_10m_admin_1_states_provinces_lines.shp"
+    fname = "/10m_cultural/10m_cultural/ne_10m_admin_1_states_provinces_lines.shp"
     # Plot
     #fig.clear()
     latlon_proj = ccrs.PlateCarree()
