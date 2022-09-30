@@ -18,6 +18,7 @@ import pyart
 from datetime import datetime
 import math
 from pandas.core.common import flatten
+import xarray as xr
 
 # get_ipython().run_line_magic("matplotlib", "inline")
 # %matplotlib widget
@@ -38,7 +39,7 @@ ptype = 'POLARRIS'
 
 
 #DATA AND PATHS
-path = "/Users/kelcy/DATA/20220604/grid_KHGX20220604*_.nc"
+path = "/Users/kelcy/Downloads/POLARRIS_20220604/grid_VCP12_CfRadial_2022_*.nc"
 
 # Set up directory to save output and plots:
 savedir = "tobac_Save_"+date
@@ -441,7 +442,7 @@ def load_cfradial_grids(ds):
     return ds
 
 
-data = load_cfradial_grids(data)
+nc_grid = load_cfradial_grids(data)
 
 
 # In[1]:
