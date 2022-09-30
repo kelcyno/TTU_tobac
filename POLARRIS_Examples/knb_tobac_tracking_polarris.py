@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore", category=pd.io.pytables.PerformanceWarning)
 
 date = '20220604'
 
-ptype = 'KHGX'
+ptype = 'POLARRIS'
 
 
 #DATA AND PATHS
@@ -50,66 +50,70 @@ if not os.path.exists(plot_dir):
 
 
 
-def qc_reflectivity2(dataset, rhv, ref=None):
-    for i in range(len(dataset["time"])):
-        refl = np.array(dataset["reflectivity"][i, :, :, :])
-        refl[np.array(dataset["cross_correlation_ratio"][i, :, :, :]) < rhv] = -999  # 0
-        if ref:
-            refl[refl < ref] = np.nan  # -999 #0
-        dataset["reflectivity"][i, :, :, :] = refl
-        max_refl = dataset["reflectivity"].max(axis=1, skipna=True)
 
+
+def qc_reflectivity2(dataset,rhv, ref = None):
+    for i in range(len(dataset['time'])):
+        refl = np.array(dataset['CZ'][i, :, :, :])
+        refl[np.array(dataset['RH'][i, :, :, :]) < rhv] = -999 
+        if ref:
+            refl[refl < ref] = -999 #0
+        dataset['CZ'][i, :, :, :] = refl
+        max_refl = dataset['CZ'].max(axis=1)
     return max_refl
 
 
-# In[216]:
 
-data = xarray.open_mfdataset(path, engine="netcdf4")
-data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
+data = xr.open_mfdataset(path, engine = 'netcdf4',combine = 'nested' ,concat_dim='time')
+data['time'].encoding['units']="seconds since 2000-01-01 00:00:00"
+files = sorted(glob(path))
+arr = []
+for i in files:
+    arr.append(pd.to_datetime(i[-19:-3], format = '%Y_%m%d_%H%M%S'))
+arr = pd.DatetimeIndex(arr)
+data = data.assign_coords(time=arr)
 rho = 0.90
-ref = 10
-maxrefl = qc_reflectivity2(data, rho, ref=ref)
+ref =  10
+maxrefl = qc_reflectivity2(data,rho,ref = ref)
+# maxrefl = data['CZ'].max(axis=1)
+
 
 # #Feature detection:
 # #Feature detection is perfomed based on surface precipitation field and a range of thresholds
+
+# In[ ]:
 
 
 # Dictionary containing keyword options (could also be directly given to the function)
 parameters_features = {}
 parameters_features["position_threshold"] = "weighted_diff"
 parameters_features["sigma_threshold"] = 1.0  # 0.5 is the default
-parameters_features["threshold"] = 30
+parameters_features["threshold"] = 15
 # parameters_features['min_num']=0
 # parameters_features['min_distance']=5 #0 #15
 # parameters_features['n_erosion_threshold']=0
 # parameters_features['n_min_threshold']=0
 
 
-# In[219]:
+# In[ ]:
 
 
-# #Dt, DXY
-datetimes = data["time"]
-timedeltas = [
-    (datetimes[i - 1] - datetimes[i]).astype("timedelta64[m]")
-    for i in range(1, len(datetimes))
-]
+#Dt, DXY
+datetimes = data['time']
+timedeltas = [(datetimes[i-1]-datetimes[i]).astype('timedelta64[m]') for i in range(1, len(datetimes))]
 print(len(timedeltas))
 average_timedelta = sum(timedeltas) / len(timedeltas)
-dt = np.abs(np.array(average_timedelta)).astype("timedelta64[m]").astype(int)
+dt = np.abs(np.array(average_timedelta)).astype('timedelta64[m]').astype(int)
 
 
-deltax = [data["x"][i - 1] - data["x"][i] for i in range(1, len(data["x"]))]
-dxy = np.abs(np.mean(deltax).astype(int)) / 1000
+deltax = [data['x'][i-1]-data['x'][i] for i in range(1, len(data['x']))]
+dxy = np.abs(np.mean(deltax).astype(int))/1000
 
 
-print(dxy, dt)
-# dxy = 0.5
-# dt = 5
-# # del data
+print(dxy,dt)
 
 
-# In[220]:
+# In[ ]:
 
 
 maxrefl_iris = maxrefl.to_iris()
@@ -124,13 +128,15 @@ Features.to_netcdf(os.path.join(savedir, "Features.nc"))
 print("features saved")
 
 
-# In[221]:
+
+# In[ ]:
+
 
 
 # Dictionary containing keyword arguments for segmentation step:
 parameters_segmentation = {}
 parameters_segmentation["method"] = "watershed"
-parameters_segmentation["threshold"] = 30  # mm/h mixing ratio
+parameters_segmentation["threshold"] = 15  # mm/h mixing ratio
 # parameters_segmentation['ISO_dilate']=10 #this is the size
 # parameters_segmentation['features']
 # parameters_segmentation['field']
@@ -144,7 +150,8 @@ parameters_segmentation["threshold"] = 30  # mm/h mixing ratio
 # parameters_segmentation['vertical_coord']
 
 
-# In[222]:
+
+# In[ ]:
 
 
 Features_df = Features.to_dataframe()
@@ -167,8 +174,8 @@ Features_Precip.to_netcdf(os.path.join(savedir, "Features_Precip.nc"))
 print("segmentation reflectivity performed and saved")
 
 
-# In[223]:
 
+# In[ ]:
 
 areas = np.zeros([(len(Features["index"]) + 1)])
 maxfeature_refl = np.zeros([(len(Features["index"]) + 1)])
@@ -200,7 +207,7 @@ Features_df = Features.to_dataframe()
 print("features saved")
 
 
-# In[224]:
+# In[ ]:
 
 
 # Dictionary containing keyword arguments for the linking step:
@@ -213,11 +220,12 @@ parameters_linking["order"] = 2  # Order of polynomial for extrapolating
 parameters_linking["subnetwork_size"] = 100  # 50 #100
 parameters_linking["memory"] = 3  # 4
 # parameters_linking['time_cell_min']=1
-parameters_linking["v_max"] = 2.0  # 1.2 #2.0#.5
+parameters_linking["v_max"] = 1.0  # 1.2 #2.0#.5
 parameters_linking["d_min"] = None  # 5
 
 
-# In[225]:
+
+# In[ ]:
 
 
 # Perform trajectory linking using trackpy and save the resulting DataFrame:
@@ -232,7 +240,8 @@ Track = Track.to_xarray()
 Track.to_netcdf(os.path.join(savedir, "Track.nc"))
 
 
-# In[226]:
+
+# In[ ]:
 
 
 Track = xarray.open_dataset(savedir + "/Track.nc")
@@ -240,7 +249,6 @@ Track = Track.to_dataframe()
 Features = xarray.open_dataset(savedir + "/Features.nc")
 refl_mask = xarray.open_dataset(savedir + "/Mask_Segmentation_refl.nc")
 refl_features = xarray.open_dataset(savedir + "/Features_Precip.nc")
-
 
 # In[ ]:
 
@@ -254,8 +262,6 @@ both_ds = tobac.utils.compress_all(both_ds)
 both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
 
 
-# In[9]:
-
 
 import numpy as np
 import warnings
@@ -266,13 +272,11 @@ from datetime import datetime
 
 try:
     import pyproj
-
     _PYPROJ_AVAILABLE = True
 except ImportError:
     _PYPROJ_AVAILABLE = False
 
-
-def cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, R=6370997.0):
+def cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, R=6370997.):
     """
     Azimuthal equidistant Cartesian to geographic coordinate transform.
 
@@ -326,30 +330,28 @@ def cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, R=6370997.0):
     lat_0_rad = np.deg2rad(lat_0)
     lon_0_rad = np.deg2rad(lon_0)
 
-    rho = np.sqrt(x * x + y * y)
+    rho = np.sqrt(x*x + y*y)
     c = rho / R
 
     with warnings.catch_warnings():
         # division by zero may occur here but is properly addressed below so
         # the warnings can be ignored
         warnings.simplefilter("ignore", RuntimeWarning)
-        lat_rad = np.arcsin(
-            np.cos(c) * np.sin(lat_0_rad) + y * np.sin(c) * np.cos(lat_0_rad) / rho
-        )
+        lat_rad = np.arcsin(np.cos(c) * np.sin(lat_0_rad) +
+                            y * np.sin(c) * np.cos(lat_0_rad) / rho)
     lat_deg = np.rad2deg(lat_rad)
     # fix cases where the distance from the center of the projection is zero
     lat_deg[rho == 0] = lat_0
 
     x1 = x * np.sin(c)
-    x2 = rho * np.cos(lat_0_rad) * np.cos(c) - y * np.sin(lat_0_rad) * np.sin(c)
+    x2 = rho*np.cos(lat_0_rad)*np.cos(c) - y*np.sin(lat_0_rad)*np.sin(c)
     lon_rad = lon_0_rad + np.arctan2(x1, x2)
     lon_deg = np.rad2deg(lon_rad)
     # Longitudes should be from -180 to 180 degrees
-    lon_deg[lon_deg > 180] -= 360.0
-    lon_deg[lon_deg < -180] += 360.0
+    lon_deg[lon_deg > 180] -= 360.
+    lon_deg[lon_deg < -180] += 360.
 
     return lon_deg, lat_deg
-
 
 def cartesian_to_geographic(grid_ds):
     """
@@ -375,13 +377,13 @@ def cartesian_to_geographic(grid_ds):
     x = grid_ds.x.values
     y = grid_ds.y.values
     z = grid_ds.z.values
-    z, y, x = np.meshgrid(z, y, x, indexing="ij")
-    if projparams.attrs["grid_mapping_name"] == "azimuthal_equidistant":
+    z, y, x = np.meshgrid(z, y, x, indexing='ij')
+    if projparams.attrs['grid_mapping_name'] == 'azimuthal_equidistant':
         # Use Py-ART's Azimuthal equidistance projection
-        lat_0 = projparams.attrs["latitude_of_projection_origin"]
-        lon_0 = projparams.attrs["longitude_of_projection_origin"]
-        if "semi_major_axis" in projparams:
-            R = projparams.attrs["semi_major_axis"]
+        lat_0 = projparams.attrs['latitude_of_projection_origin']
+        lon_0 = projparams.attrs['longitude_of_projection_origin']
+        if 'semi_major_axis' in projparams:
+            R = projparams.attrs['semi_major_axis']
             lon, lat = cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, R)
         else:
             lon, lat = cartesian_to_geographic_aeqd(x, y, lon_0, lat_0)
@@ -392,8 +394,7 @@ def cartesian_to_geographic(grid_ds):
             raise MissingOptionalDependency(
                 "PyProj is required to use cartesian_to_geographic "
                 "with a projection other than pyart_aeqd but it is not "
-                "installed"
-            )
+                "installed")
         proj = pyproj.Proj(projparams)
         lon, lat = proj(x, y, inverse=True)
     return lon, lat
@@ -410,16 +411,7 @@ def add_lat_lon_grid(grid_ds):
     return grid_ds
 
 
-def parse_grid_datetime(my_ds):
-    year = my_ds["time"].dt.year
-    month = my_ds["time"].dt.month
-    day = my_ds["time"].dt.day
-    hour = my_ds["time"].dt.hour
-    minute = my_ds["time"].dt.minute
-    second = my_ds["time"].dt.second
-    return datetime(
-        year=year, month=month, day=day, hour=hour, minute=minute, second=second
-    )
+
 
 
 """ X-Array based TINT I/O module. """
@@ -429,24 +421,30 @@ import random
 import numpy as np
 import pyproj
 
-# from .grid_utils import add_lat_lon_grid
+#from .grid_utils import add_lat_lon_grid
 from datetime import datetime
 
-
-def load_cfradial_grids(file_list):
-    ds = xr.open_mfdataset(file_list)
-    # Check for CF/Radial conventions
-    if not ds.attrs["Conventions"] == "CF/Radial instrument_parameters":
-        ds.close()
-        raise IOError("TINT module is only compatible with CF/Radial files!")
+def load_cfradial_grids(ds):
     ds = add_lat_lon_grid(ds)
+#     ds.attrs["cf_tree_order"] = "storm_id cell_id"
+#     ds.attrs["tree_id"] = "%d" % random.randint(a=0, b=65535)
+#     # Try to detect number of fields (4D arrays)
+#     nfields = 0
+#     for keys in ds.variables.keys():
+#         if(len(ds[keys].dims) == 3):
+#             nfields += 1
+
+#     ds['storm_id'] = ('storm', np.arange(0, nfields, 1))
+#     ds['storm_id'].attrs["child"] = "cell"
+#     ds['storm_id'].attrs["tree_id"] = ds.attrs["tree_id"]
 
     return ds
 
 
-nc_grid = load_cfradial_grids(path)
+data = load_cfradial_grids(data)
 
-# In[90]:
+
+# In[1]:
 
 
 # USING BOTH_DS XARRAY COMBINED DATA SET
@@ -468,18 +466,16 @@ def time_in_range(start, end, x):
         return start <= x or x <= end
 
 
-def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
-    # Get the data
-    #    hsv_ctr_lat, hsv_ctr_lon = 29.4719, -95.0792
-    hsv_ctr_lat, hsv_ctr_lon = 34.93055725, -86.08361053
-    #     hsv_ctr_lat, hsv_ctr_lon = 33.89691544, -88.32919312
+def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):    # Get the data
 
+    hsv_ctr_lat, hsv_ctr_lon = 29.4719, -95.0792
     refl = max_refl[t_index, :, :]
 
     t_step = str(ncgrid["time"][t_index].values)
     nclons = ncgrid["point_longitude"][0, :, :].data
     nclats = ncgrid["point_latitude"][0, :, :].data
 
+    
     fname = "/Users/kelcy/Downloads/10m_cultural/10m_cultural/ne_10m_admin_1_states_provinces_lines.shp"
     # Plot
     # fig.clear()
@@ -522,10 +518,8 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
         gl.right_labels = False
 
     # Gridded background
-    grid_extent = (ncgrid.x.min(), ncgrid.x.max(), ncgrid.y.min(), ncgrid.y.max())
-
-    # fig.suptitle((t_step[0:19] + ' 40 dbz, long tracks, ISO_THRESH = 12'), fontsize = 12,y=0.76)
-
+    grid_extent = (ncgrid.x.min(), ncgrid.x.max(),
+                   ncgrid.y.min(), ncgrid.y.max())
     # Cell ID
     im = axs[0].imshow(
         refl,
@@ -538,6 +532,7 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     )
     axs[0].set_title((t_step[0:19] + " " + str(dbz) + " dbz, Tobac"))
     axs.cbar_axes[0].colorbar(im)
+
 
     i = np.where(xrdata["segmentation_mask"][t_index, :, :] > 0)
     y1, x1 = (
@@ -630,10 +625,13 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     return
 
 
+# In[ ]:
+
 for i in range(len(nc_grid.time)):
     time_index = i
     fig = plt.figure(figsize=(9, 9))
     fig.set_canvas(plt.gcf().canvas)
-    plot(time_index, both_ds, maxrefl, nc_grid, 30)
+    plot(time_index, both_ds, maxrefl, nc_grid, 15)
     fig.savefig(plot_dir + date+"_tobac_30dbz_tracks_" + str(time_index) + "_"+ptype+".png")
+
 
