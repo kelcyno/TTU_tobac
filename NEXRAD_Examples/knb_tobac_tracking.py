@@ -109,6 +109,8 @@ print(dxy, dt)
 # # del data
 
 
+
+
 # In[220]:
 
 
@@ -470,9 +472,8 @@ def time_in_range(start, end, x):
 
 def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     # Get the data
-    #    hsv_ctr_lat, hsv_ctr_lon = 29.4719, -95.0792
-    hsv_ctr_lat, hsv_ctr_lon = 34.93055725, -86.08361053
-    #     hsv_ctr_lat, hsv_ctr_lon = 33.89691544, -88.32919312
+    hsv_ctr_lat, hsv_ctr_lon = 29.4719, -95.0792
+
 
     refl = max_refl[t_index, :, :]
 
@@ -636,4 +637,5 @@ for i in range(len(nc_grid.time)):
     fig.set_canvas(plt.gcf().canvas)
     plot(time_index, both_ds, maxrefl, nc_grid, 30)
     fig.savefig(plot_dir + date+"_tobac_30dbz_tracks_" + str(time_index) + "_"+ptype+".png")
+    plt.close(fig)
 
