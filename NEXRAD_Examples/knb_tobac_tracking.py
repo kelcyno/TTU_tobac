@@ -1,8 +1,46 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[213]:
+import argparse
 
+parse_desc = """Find features, track, and plot all nexrad data in a given destination folder
+
+The path is a string destination
+Files in path must have a postfix of 'grid.nc'. 
+threshold is the tracking threshold in dbz
+speed is the tracking speed in tobac units. 
+Site is a string NEXRAD location
+
+
+Example
+=======
+python knb_tobac_tracking.py --path="/Users/kelcy/DATA/20220604/" 
+    --threshold=15 --speed=1.0 --site='KHGX'
+
+
+"""
+
+
+def create_parser():
+    parser = argparse.ArgumentParser(description=parse_desc)
+    parser.add_argument('--path',metavar='path', required=True,dest='path',
+                        action = 'store',help='path in which the data is located')
+    parser.add_argument('-o', '--output_path',
+                        metavar='filename template including path',
+                        required=False, dest='outdir', action='store',
+                        default='.', help='path in which the data is located')
+    parser.add_argument('--site', metavar='site', required=True,
+                        dest='site', action='store',
+                        help='NEXRAD site code, e.g., khgx')
+    parser.add_argument('--threshold', metavar='dbz', required=True,
+                        dest='track_threshold', action='store',
+                        help='Tracking/Feature threshold in dbz, e.g., 15')
+    parser.add_argument('--speed', metavar='value', required=True,
+                        dest='track_speed', action='store',
+                        help='Tracking speed, e.g., 1.0')
+    return parser
+
+# End parsing #
 
 # Import libraries:
 import xarray
@@ -22,7 +60,7 @@ from pandas.core.common import flatten
 # get_ipython().run_line_magic("matplotlib", "inline")
 # %matplotlib widget
 import tobac
-from tobac.merge_split import merge_split
+from tobac.merge_split import merge_split_cells
 
 # Disable a couple of warnings:
 import warnings
@@ -31,23 +69,6 @@ warnings.filterwarnings("ignore", category=UserWarning, append=True)
 warnings.filterwarnings("ignore", category=RuntimeWarning, append=True)
 warnings.filterwarnings("ignore", category=FutureWarning, append=True)
 warnings.filterwarnings("ignore", category=pd.io.pytables.PerformanceWarning)
-
-date = '20220604'
-
-ptype = 'KHGX'
-
-
-#DATA AND PATHS
-path = "/Users/kelcy/DATA/20220604/grid_KHGX20220604*_.nc"
-
-# Set up directory to save output and plots:
-savedir = "tobac_Save_"+date
-if not os.path.exists(savedir):
-    os.makedirs(savedir)
-plot_dir = "tobac_Save_"+date+"/tobac_Plot/"
-if not os.path.exists(plot_dir):
-    os.makedirs(plot_dir)
-
 
 
 def qc_reflectivity2(dataset, rhv, ref=None):
@@ -61,202 +82,6 @@ def qc_reflectivity2(dataset, rhv, ref=None):
 
     return max_refl
 
-
-# In[216]:
-
-data = xarray.open_mfdataset(path, engine="netcdf4")
-data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
-rho = 0.90
-ref = 10
-maxrefl = qc_reflectivity2(data, rho, ref=ref)
-
-# #Feature detection:
-# #Feature detection is perfomed based on surface precipitation field and a range of thresholds
-
-
-# Dictionary containing keyword options (could also be directly given to the function)
-parameters_features = {}
-parameters_features["position_threshold"] = "weighted_diff"
-parameters_features["sigma_threshold"] = 1.0  # 0.5 is the default
-parameters_features["threshold"] = 30
-# parameters_features['min_num']=0
-# parameters_features['min_distance']=5 #0 #15
-# parameters_features['n_erosion_threshold']=0
-# parameters_features['n_min_threshold']=0
-
-
-# In[219]:
-
-
-# #Dt, DXY
-datetimes = data["time"]
-timedeltas = [
-    (datetimes[i - 1] - datetimes[i]).astype("timedelta64[m]")
-    for i in range(1, len(datetimes))
-]
-print(len(timedeltas))
-average_timedelta = sum(timedeltas) / len(timedeltas)
-dt = np.abs(np.array(average_timedelta)).astype("timedelta64[m]").astype(int)
-
-
-deltax = [data["x"][i - 1] - data["x"][i] for i in range(1, len(data["x"]))]
-dxy = np.abs(np.mean(deltax).astype(int)) / 1000
-
-
-print(dxy, dt)
-# dxy = 0.5
-# dt = 5
-# # del data
-
-
-
-
-# In[220]:
-
-
-maxrefl_iris = maxrefl.to_iris()
-# Feature detection based on based on surface precipitation field and a range of thresholds
-print("starting feature detection based on multiple thresholds")
-Features_iris = tobac.feature_detection_multithreshold(
-    maxrefl_iris, dxy, **parameters_features
-)
-Features = Features_iris.to_xarray()
-print("feature detection done")
-Features.to_netcdf(os.path.join(savedir, "Features.nc"))
-print("features saved")
-
-
-# In[221]:
-
-
-# Dictionary containing keyword arguments for segmentation step:
-parameters_segmentation = {}
-parameters_segmentation["method"] = "watershed"
-parameters_segmentation["threshold"] = 30  # mm/h mixing ratio
-# parameters_segmentation['ISO_dilate']=10 #this is the size
-# parameters_segmentation['features']
-# parameters_segmentation['field']
-# parameters_segmentation['dxy']
-# parameters_segmentation['target']
-# parameters_segmentation['level']
-# parameters_segmentation['method']
-# parameters_segmentation['max_distance']
-# Maximum distance from a marker allowed to be classified as
-# belonging to that cell. Default is None.
-# parameters_segmentation['vertical_coord']
-
-
-# In[222]:
-
-
-Features_df = Features.to_dataframe()
-
-# Perform Segmentation and save resulting mask to NetCDF file:
-print("Starting segmentation based on reflectivity")
-Mask_iris, Features_Precip = tobac.segmentation.segmentation(
-    Features_df, maxrefl_iris, dxy, **parameters_segmentation
-)
-# Mask,Features_Precip=tobac.themes.tobac_v1.segmentation(Features,maxrefl,dxy,**parameters_segmentation)
-Features_Precip = Features_Precip.to_xarray()
-Mask = xarray.DataArray.from_iris(Mask_iris)
-Mask = Mask.to_dataset()
-
-
-# Mask,Features_Precip=segmentation(Features,maxrefl,dxy,**parameters_segmentation)
-print("segmentation based on reflectivity performed, start saving results to files")
-Mask.to_netcdf(os.path.join(savedir, "Mask_Segmentation_refl.nc"))
-Features_Precip.to_netcdf(os.path.join(savedir, "Features_Precip.nc"))
-print("segmentation reflectivity performed and saved")
-
-
-# In[223]:
-
-
-areas = np.zeros([(len(Features["index"]) + 1)])
-maxfeature_refl = np.zeros([(len(Features["index"]) + 1)])
-# Mask = Mask.to_dataset()
-frame_features = Features.groupby("frame")
-
-for frame_i, features_i in frame_features:
-    #     print(frame_i)
-    #     print(features_i)
-    mask_i = Mask["segmentation_mask"][frame_i, :, :].values
-    subrefl = maxrefl[frame_i, :, :].values
-    for i in np.unique(mask_i):
-        feature_area_i = np.where(mask_i == i)
-        areas[i] = len(feature_area_i[0])
-        maxfeature_refl[i] = np.nanmax(subrefl[feature_area_i])
-
-
-var = Features["feature"].copy(data=areas[1:])
-var = var.rename("areas")
-var_max = Features["feature"].copy(data=maxfeature_refl[1:])
-var_max = var_max.rename("max_reflectivity")
-Features_Precip = xarray.merge([Features_Precip, var], compat="override")
-Features = xarray.merge([Features, var], compat="override")
-Features = xarray.merge([Features, var_max], compat="override")
-Features_Precip.to_netcdf(os.path.join(savedir, "Features_Precip.nc"))
-Features.to_netcdf(os.path.join(savedir, "Features.nc"))
-Mask = Mask.to_array()
-Features_df = Features.to_dataframe()
-print("features saved")
-
-
-# In[224]:
-
-
-# Dictionary containing keyword arguments for the linking step:
-parameters_linking = {}
-parameters_linking["stubs"] = 3  # 5
-parameters_linking["method_linking"] = "predict"
-parameters_linking["adaptive_stop"] = 0.2
-parameters_linking["adaptive_step"] = 0.95
-parameters_linking["order"] = 2  # Order of polynomial for extrapolating
-parameters_linking["subnetwork_size"] = 100  # 50 #100
-parameters_linking["memory"] = 3  # 4
-# parameters_linking['time_cell_min']=1
-parameters_linking["v_max"] = 2.0  # 1.2 #2.0#.5
-parameters_linking["d_min"] = None  # 5
-
-
-# In[225]:
-
-
-# Perform trajectory linking using trackpy and save the resulting DataFrame:
-
-# Track=tobac.themes.tobac_v1.linking_trackpy(Features,Mask,dt=dt,dxy=dxy,**parameters_linking)
-Features_df = Features.to_dataframe()
-Track = tobac.linking_trackpy(
-    Features_df, Mask_iris, dt=dt, dxy=dxy, **parameters_linking
-)
-print(type(Track))
-Track = Track.to_xarray()
-Track.to_netcdf(os.path.join(savedir, "Track.nc"))
-
-
-# In[226]:
-
-
-Track = xarray.open_dataset(savedir + "/Track.nc")
-Track = Track.to_dataframe()
-Features = xarray.open_dataset(savedir + "/Features.nc")
-refl_mask = xarray.open_dataset(savedir + "/Mask_Segmentation_refl.nc")
-refl_features = xarray.open_dataset(savedir + "/Features_Precip.nc")
-
-
-# In[ ]:
-
-
-d = merge_split(Track, distance=10000.0)  # , dxy = dxy)
-Track = xarray.open_dataset(savedir + "/Track.nc")
-ds = tobac.utils.standardize_track_dataset(
-    Track, refl_mask)
-both_ds = xarray.merge([ds, d], compat="override")
-both_ds = tobac.utils.compress_all(both_ds)
-both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
-
-
-# In[9]:
 
 
 import numpy as np
@@ -446,10 +271,6 @@ def load_cfradial_grids(file_list):
     return ds
 
 
-nc_grid = load_cfradial_grids(path)
-
-# In[90]:
-
 
 # USING BOTH_DS XARRAY COMBINED DATA SET
 
@@ -473,7 +294,8 @@ def time_in_range(start, end, x):
 def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     # Get the data
     hsv_ctr_lat, hsv_ctr_lon = 29.4719, -95.0792
-
+#     hsv_ctr_lat, hsv_ctr_lon = 34.93055725, -86.08361053
+    #     hsv_ctr_lat, hsv_ctr_lon = 33.89691544, -88.32919312
 
     refl = max_refl[t_index, :, :]
 
@@ -602,7 +424,7 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
                         ).astype(int),
                     ],
                     f"{int(i)}",
-                    fontsize="small",
+                    fontsize="medium",
                     rotation="vertical",
                     transform=latlon_proj,
                 )
@@ -631,11 +453,171 @@ def plot(t_index, xrdata, max_refl, ncgrid, dbz, ind=None):
     return
 
 
-for i in range(len(nc_grid.time)):
-    time_index = i
-    fig = plt.figure(figsize=(9, 9))
-    fig.set_canvas(plt.gcf().canvas)
-    plot(time_index, both_ds, maxrefl, nc_grid, 30)
-    fig.savefig(plot_dir + date+"_tobac_30dbz_tracks_" + str(time_index) + "_"+ptype+".png")
-    plt.close(fig)
+
+if __name__ == '__main__':
+    parser = create_parser()
+    args = parser.parse_args()
+    
+    data = xarray.open_mfdataset(args.path+"*grid.nc", engine="netcdf4")
+    data["time"].encoding["units"] = "seconds since 2000-01-01 00:00:00"
+    rho = 0.90
+    ref = 10
+    maxrefl = qc_reflectivity2(data, rho, ref=ref)
+
+
+    ts = pd.to_datetime(data['time'][0].values)
+    date = ts.strftime('%Y%m%d')
+
+
+
+
+    # Set up directory to save output and plots:
+    savedir = "tobac_Save_"+date
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+    plot_dir = "tobac_Save_"+date+"/tobac_Plot/"
+    if not os.path.exists(plot_dir):
+        os.makedirs(plot_dir)
+
+# #Feature detection:
+
+# Dictionary containing keyword options (could also be directly given to the function)
+    parameters_features = {}
+    parameters_features["position_threshold"] = "weighted_diff"
+    parameters_features["sigma_threshold"] = 1.0  # 0.5 is the default
+    parameters_features["threshold"] = args.track_threshold
+    # parameters_features['min_num']=0
+    # parameters_features['min_distance']=5 #0 #15
+    # parameters_features['n_erosion_threshold']=0
+    # parameters_features['n_min_threshold']=0
+
+
+
+	# #Dt, DXY
+    datetimes = data["time"]
+    timedeltas = [(datetimes[i - 1] - datetimes[i]).astype("timedelta64[m]")for i in range(1, len(datetimes))]
+    average_timedelta = sum(timedeltas) / len(timedeltas)
+    dt = np.abs(np.array(average_timedelta)).astype("timedelta64[m]").astype(int)
+
+    deltax = [data["x"][i - 1] - data["x"][i] for i in range(1, len(data["x"]))]
+    dxy = np.abs(np.mean(deltax).astype(int)) / 1000
+
+
+
+    maxrefl_iris = maxrefl.to_iris()
+    # Feature detection based on based on surface precipitation field and a range of thresholds
+    print("starting feature detection based on multiple thresholds")
+    Features_iris = tobac.feature_detection_multithreshold(maxrefl_iris, dxy, **parameters_features)
+    Features = Features_iris.to_xarray()
+    print("feature detection done")
+    Features.to_netcdf(os.path.join(savedir, "Features.nc"))
+    print("features saved")
+
+
+    # Dictionary containing keyword arguments for segmentation step:
+    parameters_segmentation = {}
+    parameters_segmentation["method"] = "watershed"
+    parameters_segmentation["threshold"] = args.track_threshold  # mm/h mixing ratio
+    # parameters_segmentation['ISO_dilate']=10 #this is the size
+    # parameters_segmentation['features']
+    # parameters_segmentation['field']
+    # parameters_segmentation['dxy']
+    # parameters_segmentation['target']
+    # parameters_segmentation['level']
+    # parameters_segmentation['method']
+    # parameters_segmentation['max_distance']
+    # Maximum distance from a marker allowed to be classified as
+    # belonging to that cell. Default is None.
+    # parameters_segmentation['vertical_coord']
+
+    Features_df = Features.to_dataframe()
+
+    # Perform Segmentation and save resulting mask to NetCDF file:
+    print("Starting segmentation based on reflectivity")
+    Mask_iris, Features_Precip = tobac.segmentation.segmentation(Features_df, maxrefl_iris, dxy, **parameters_segmentation)
+    # Mask,Features_Precip=tobac.themes.tobac_v1.segmentation(Features,maxrefl,dxy,**parameters_segmentation)
+    Features_Precip = Features_Precip.to_xarray()
+    Mask = xarray.DataArray.from_iris(Mask_iris)
+    Mask = Mask.to_dataset()
+
+    # Mask,Features_Precip=segmentation(Features,maxrefl,dxy,**parameters_segmentation)
+    print("segmentation based on reflectivity performed, start saving results to files")
+    Mask.to_netcdf(os.path.join(savedir, "Mask_Segmentation_refl.nc"))
+    Features_Precip.to_netcdf(os.path.join(savedir, "Features_Precip.nc"))
+    print("segmentation reflectivity performed and saved")
+
+
+    areas = np.zeros([(len(Features["index"]) + 1)])
+    maxfeature_refl = np.zeros([(len(Features["index"]) + 1)])
+    # Mask = Mask.to_dataset()
+    frame_features = Features.groupby("frame")
+
+    for frame_i, features_i in frame_features:
+        mask_i = Mask["segmentation_mask"][frame_i, :, :].values
+        subrefl = maxrefl[frame_i, :, :].values
+        for i in np.unique(mask_i):
+            feature_area_i = np.where(mask_i == i)
+            areas[i] = len(feature_area_i[0])
+            maxfeature_refl[i] = np.nanmax(subrefl[feature_area_i])
+
+
+    var = Features["feature"].copy(data=areas[1:])
+    var = var.rename("areas")
+    var_max = Features["feature"].copy(data=maxfeature_refl[1:])
+    var_max = var_max.rename("max_reflectivity")
+    Features_Precip = xarray.merge([Features_Precip, var], compat="override")
+    Features = xarray.merge([Features, var], compat="override")
+    Features = xarray.merge([Features, var_max], compat="override")
+    Features_Precip.to_netcdf(os.path.join(savedir, "Features_Precip.nc"))
+    Features.to_netcdf(os.path.join(savedir, "Features.nc"))
+    Mask = Mask.to_array()
+    Features_df = Features.to_dataframe()
+    print("features saved")
+
+
+
+    # Dictionary containing keyword arguments for the linking step:
+    parameters_linking = {}
+    parameters_linking["stubs"] = 5
+    parameters_linking["method_linking"] = "predict"
+    parameters_linking["adaptive_stop"] = 0.2
+    parameters_linking["adaptive_step"] = 0.95
+    parameters_linking["order"] = 2  # Order of polynomial for extrapolating
+    parameters_linking["subnetwork_size"] = 100  # 50 #100
+    parameters_linking["memory"] = 3  # 4
+    # parameters_linking['time_cell_min']=1
+    parameters_linking["v_max"] =  args.track_speed  
+    parameters_linking["d_min"] = None  # 5    
+
+    # Perform trajectory linking using trackpy and save the resulting DataFrame:
+
+    # Track=tobac.themes.tobac_v1.linking_trackpy(Features,Mask,dt=dt,dxy=dxy,**parameters_linking)
+    Features_df = Features.to_dataframe()
+    Track = tobac.linking_trackpy(
+    Features_df, Mask_iris, dt=dt, dxy=dxy, **parameters_linking)
+    #(type(Track))
+    Track = Track.to_xarray()
+    Track.to_netcdf(os.path.join(savedir, "Track.nc"))
+
+    Track = xarray.open_dataset(savedir + "/Track.nc")
+    Track = Track.to_dataframe()
+    Features = xarray.open_dataset(savedir + "/Features.nc")
+    refl_mask = xarray.open_dataset(savedir + "/Mask_Segmentation_refl.nc")
+    refl_features = xarray.open_dataset(savedir + "/Features_Precip.nc")
+
+    d = merge_split_cells(Track,500., distance=15000.0)  # , dxy = dxy)
+    Track = xarray.open_dataset(savedir + "/Track.nc")
+    ds = tobac.utils.standardize_track_dataset(Track, refl_mask)
+    both_ds = xarray.merge([ds, d], compat="override")
+    both_ds = tobac.utils.compress_all(both_ds)
+    both_ds.to_netcdf(os.path.join(savedir, "Track_features_merges.nc"))
+ 
+    nc_grid = load_cfradial_grids(args.path)
+    for i in range(len(nc_grid.time)):
+        time_index = i
+        fig = plt.figure(figsize=(9, 9))
+        fig.set_canvas(plt.gcf().canvas)
+        plot(time_index, both_ds, maxrefl, nc_grid, args.track_threshold)
+        fig.savefig(plot_dir + date+"_tobac"+str(args.track_threshold)+'dbz' + str(time_index) + "_"+args.site+".png")
+        plt.close(fig)
 
